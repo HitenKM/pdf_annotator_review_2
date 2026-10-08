@@ -61,10 +61,10 @@ export default function App() {
         if (typeof parsed === 'object' && !Array.isArray(parsed)) {
           // Convert label-based keys to annotation IDs
           const newFieldValues: Record<string, string> = {};
-          const allAnnotations = Object.values(annotations.pages).flat();
+          const allAnnotations = Object.values(annotations?.pages || {}).flat();
           
           for (const [key, value] of Object.entries(parsed)) {
-            const annotation = allAnnotations.find(a => a.label === key || a.id === key);
+            const annotation = allAnnotations.find((a: any) => a.label === key || a.id === key);
             if (annotation && typeof value === 'string') {
               newFieldValues[annotation.id] = value;
             }
@@ -79,10 +79,15 @@ export default function App() {
         }
       } else {
         // In edit mode, parse as annotation JSON
-        setAnnotations(parsed);
-        setJsonError(null);
-        setShowPasteModal(false);
-        setPasteJsonText('');
+        // Validate structure
+        if (parsed && typeof parsed === 'object' && parsed.pages) {
+          setAnnotations(parsed);
+          setJsonError(null);
+          setShowPasteModal(false);
+          setPasteJsonText('');
+        } else {
+          setJsonError('Invalid annotation JSON structure. Must have "pages" property.');
+        }
       }
     } catch (err) {
       setJsonError('Invalid JSON format');
@@ -123,7 +128,7 @@ export default function App() {
     if (mode === 'review') {
       // Export data JSON
       exportData = {};
-      const allAnnotations = Object.values(annotations.pages).flat();
+      const allAnnotations = Object.values(annotations?.pages || {}).flat();
       for (const annotation of allAnnotations) {
         const value = fieldValues[annotation.id];
         if (value !== undefined) {
@@ -154,7 +159,7 @@ export default function App() {
 
   const getDataJsonForDisplay = () => {
     const data: Record<string, string> = {};
-    const allAnnotations = Object.values(annotations.pages).flat();
+    const allAnnotations = Object.values(annotations?.pages || {}).flat();
     for (const annotation of allAnnotations) {
       const value = fieldValues[annotation.id];
       if (value !== undefined) {
@@ -535,8 +540,8 @@ export default function App() {
 
           {/* Review Mode: Field Editing Panel */}
           {mode === 'review' && editingFieldId && (() => {
-            const allAnnotations = Object.values(annotations.pages).flat();
-            const annotation = allAnnotations.find(a => a.id === editingFieldId);
+            const allAnnotations = Object.values(annotations?.pages || {}).flat();
+            const annotation = allAnnotations.find((a: any) => a.id === editingFieldId);
             if (!annotation) return null;
             
             return (
@@ -601,9 +606,9 @@ export default function App() {
                     const parsed = JSON.parse(e.target.value);
                     if (typeof parsed === 'object' && !Array.isArray(parsed)) {
                       const newFieldValues: Record<string, string> = {};
-                      const allAnnotations = Object.values(annotations.pages).flat();
+                      const allAnnotations = Object.values(annotations?.pages || {}).flat();
                       for (const [key, value] of Object.entries(parsed)) {
-                        const annotation = allAnnotations.find(a => a.label === key || a.id === key);
+                        const annotation = allAnnotations.find((a: any) => a.label === key || a.id === key);
                         if (annotation && typeof value === 'string') {
                           newFieldValues[annotation.id] = value;
                         }

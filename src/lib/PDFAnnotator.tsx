@@ -235,7 +235,7 @@ function PDFPage({
       await page.render({
         canvasContext: context,
         viewport,
-      }).promise;
+      } as any).promise;
     };
 
     renderPage();
