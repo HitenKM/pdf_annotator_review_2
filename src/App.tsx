@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PDFAnnotator } from './lib/PDFAnnotator';
 import type { AnnotationsJSON, Annotation } from './types';
-import { exportToInputFormat } from './types';
+import { 
+  exportToInputFormat, 
+  isPDFFormFillerV1Format, 
+  convertPDFFormFillerV1ToAnnotations,
+  convertAnnotationsToPDFFormFillerV1 
+} from './types';
 
 export default function App() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -15,6 +20,7 @@ export default function App() {
   const [mode, setMode] = useState<'edit' | 'review'>('edit');
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<'internal' | 'pdf_form_filler_v1'>('internal');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,7 +51,19 @@ export default function App() {
   const handleJsonPaste = (text: string) => {
     try {
       const parsed = JSON.parse(text);
-      setAnnotations(parsed);
+      
+      // Detect and convert pdf_form_filler/v1 format
+      if (isPDFFormFillerV1Format(parsed)) {
+        const converted = convertPDFFormFillerV1ToAnnotations(parsed);
+        setAnnotations(converted);
+        setExportFormat('pdf_form_filler_v1');
+      } else if (parsed && typeof parsed === 'object' && parsed.pages) {
+        setAnnotations(parsed);
+      } else {
+        setJsonError('Invalid annotation JSON structure');
+        return;
+      }
+      
       setJsonError(null);
     } catch (err) {
       setJsonError('Invalid JSON');
@@ -79,14 +97,22 @@ export default function App() {
         }
       } else {
         // In edit mode, parse as annotation JSON
-        // Validate structure
-        if (parsed && typeof parsed === 'object' && parsed.pages) {
+        // Detect and convert pdf_form_filler/v1 format
+        if (isPDFFormFillerV1Format(parsed)) {
+          const converted = convertPDFFormFillerV1ToAnnotations(parsed);
+          setAnnotations(converted);
+          setExportFormat('pdf_form_filler_v1');
+          setJsonError(null);
+          setShowPasteModal(false);
+          setPasteJsonText('');
+        } else if (parsed && typeof parsed === 'object' && parsed.pages) {
           setAnnotations(parsed);
+          setExportFormat('internal');
           setJsonError(null);
           setShowPasteModal(false);
           setPasteJsonText('');
         } else {
-          setJsonError('Invalid annotation JSON structure. Must have "pages" property.');
+          setJsonError('Invalid annotation JSON structure. Must have "pages" property or be in pdf_form_filler/v1 format.');
         }
       }
     } catch (err) {
@@ -138,9 +164,17 @@ export default function App() {
       }
       filename = 'data.json';
     } else {
-      // Export annotation JSON
-      exportData = exportToInputFormat(annotations);
-      filename = 'annotations.json';
+      // Export annotation JSON in selected format
+      if (exportFormat === 'pdf_form_filler_v1') {
+        exportData = convertAnnotationsToPDFFormFillerV1(
+          annotations,
+          pdfFile?.name || 'document.pdf'
+        );
+        filename = 'annotations_form_filler.json';
+      } else {
+        exportData = exportToInputFormat(annotations);
+        filename = 'annotations.json';
+      }
     }
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -437,6 +471,19 @@ export default function App() {
 
         <div className="h-4 w-px bg-gray-700" />
 
+        {/* Export Format Selector (only in edit mode) */}
+        {mode === 'edit' && (
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as 'internal' | 'pdf_form_filler_v1')}
+            className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
+            title="Export format"
+          >
+            <option value="internal">Internal Format</option>
+            <option value="pdf_form_filler_v1">PDF Form Filler v1</option>
+          </select>
+        )}
+
         <button
           onClick={handleExport}
           className="px-2.5 py-1 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors flex items-center gap-1.5 font-medium"
@@ -598,6 +645,8 @@ export default function App() {
               value={
                 mode === 'review'
                   ? JSON.stringify(getDataJsonForDisplay(), null, 2)
+                  : exportFormat === 'pdf_form_filler_v1'
+                  ? JSON.stringify(convertAnnotationsToPDFFormFillerV1(annotations, pdfFile?.name), null, 2)
                   : JSON.stringify(annotations, null, 2)
               }
               onChange={(e) => {
@@ -683,12 +732,12 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <p className="font-medium text-gray-400 mb-1">Annotation JSON format:</p>
+                    <p className="font-medium text-gray-400 mb-1">Supported formats:</p>
                     <ul className="space-y-0.5 list-disc list-inside">
-                      <li>Object with "pages" property</li>
-                      <li>Each page contains array of field objects</li>
-                      <li>Required: id, type, normalizedBox, pageIndex</li>
-                      <li>Optional: label, radioGroup</li>
+                      <li><strong>Internal format:</strong> Object with "pages" property</li>
+                      <li><strong>PDF Form Filler v1:</strong> Object with format "pdf_form_filler/v1"</li>
+                      <li>Both formats auto-detected on paste</li>
+                      <li>Use dropdown above to choose export format</li>
                     </ul>
                   </>
                 )}
