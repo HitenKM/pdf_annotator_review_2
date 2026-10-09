@@ -38,7 +38,7 @@ export function PDFAnnotator({
     annotationId: string | null;
     startX: number;
     startY: number;
-    initialPositions: Map<string, { x: number; y: number }>;
+    initialPositions: Map<string, [number, number, number, number]>;
   }>({
     isDragging: false,
     annotationId: null,
@@ -97,10 +97,10 @@ export function PDFAnnotator({
       (e.shiftKey ? selectedIds : [annotation.id]).includes(a.id)
     );
 
-    const initialPositions = new Map<string, { x: number; y: number }>();
+    // Store initial normalized positions
+    const initialPositions = new Map<string, [number, number, number, number]>();
     selectedAnnotations.forEach(ann => {
-      const pixels = normalizedToPixels(ann.normalizedBox, 1000, 1000);
-      initialPositions.set(ann.id, { x: pixels.x, y: pixels.y });
+      initialPositions.set(ann.id, ann.normalizedBox);
     });
 
     setDragState({
@@ -115,24 +115,37 @@ export function PDFAnnotator({
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragState.isDragging || !dragState.annotationId) return;
 
-    const deltaX = (e.clientX - dragState.startX) / zoom;
-    const deltaY = (e.clientY - dragState.startY) / zoom;
+    // Get the page dimensions for the annotation being dragged
+    const allAnnotations = Object.values(annotations.pages).flat();
+    const annotation = allAnnotations.find(a => a.id === dragState.annotationId);
+    if (!annotation) return;
+
+    const pageDim = pageDimensions[annotation.pageIndex];
+    if (!pageDim) return;
+
+    // Convert mouse delta from screen pixels to normalized coordinates (0-1000)
+    // The page is rendered at dimensions.width * 1.5 pixels, so we need to account for that
+    const scaledWidth = pageDim.width * 1.5;
+    const scaledHeight = pageDim.height * 1.5;
+    
+    const deltaX = ((e.clientX - dragState.startX) / zoom / scaledWidth) * 1000;
+    const deltaY = ((e.clientY - dragState.startY) / zoom / scaledHeight) * 1000;
 
     const newAnnotations = { ...annotations };
     
-    dragState.initialPositions.forEach((initialPos, id) => {
+    dragState.initialPositions.forEach((initialBox, id) => {
       const allAnnotations = Object.values(newAnnotations.pages).flat();
-      const annotation = allAnnotations.find(a => a.id === id);
-      if (!annotation) return;
+      const ann = allAnnotations.find(a => a.id === id);
+      if (!ann) return;
 
-      const [ymin, xmin, ymax, xmax] = annotation.normalizedBox;
+      const [ymin, xmin, ymax, xmax] = initialBox;
       const width = xmax - xmin;
       const height = ymax - ymin;
 
       const newXmin = xmin + deltaX;
       const newYmin = ymin + deltaY;
 
-      annotation.normalizedBox = [
+      ann.normalizedBox = [
         newYmin,
         newXmin,
         newYmin + height,
@@ -141,7 +154,7 @@ export function PDFAnnotator({
     });
 
     onAnnotationsChange(newAnnotations);
-  }, [dragState, zoom, annotations, onAnnotationsChange]);
+  }, [dragState, zoom, annotations, onAnnotationsChange, pageDimensions]);
 
   const handleMouseUp = useCallback(() => {
     setDragState({
@@ -254,7 +267,8 @@ function PDFPage({
         preserveAspectRatio="none"
       >
         {annotations.map(annotation => {
-          const pixels = normalizedToPixels(annotation.normalizedBox, dimensions.width, dimensions.height);
+          // Use normalized coordinates directly (0-1000) since viewBox is 0-1000
+          const [ymin, xmin, ymax, xmax] = annotation.normalizedBox;
           const isSelected = selectedIds.includes(annotation.id);
           const isEditing = editingFieldId === annotation.id;
           const value = fieldValues[annotation.id];
@@ -278,10 +292,10 @@ function PDFPage({
           return (
             <g key={annotation.id}>
               <rect
-                x={pixels.x}
-                y={pixels.y}
-                width={pixels.width}
-                height={pixels.height}
+                x={xmin}
+                y={ymin}
+                width={xmax - xmin}
+                height={ymax - ymin}
                 fill={fillColor}
                 stroke={strokeColor}
                 strokeWidth={isSelected || isEditing ? 2 : 1}
@@ -290,8 +304,8 @@ function PDFPage({
               />
               {annotation.label && (isSelected || isEditing) && (
                 <text
-                  x={pixels.x}
-                  y={pixels.y - 5}
+                  x={xmin}
+                  y={ymin - 5}
                   fontSize="10"
                   fill={strokeColor}
                   className="pointer-events-none"
@@ -301,8 +315,8 @@ function PDFPage({
               )}
               {mode === 'review' && value && !isEditing && (
                 <text
-                  x={pixels.x + 5}
-                  y={pixels.y + pixels.height / 2 + 4}
+                  x={xmin + 5}
+                  y={ymin + (ymax - ymin) / 2 + 4}
                   fontSize="12"
                   fill="#1f2937"
                   className="pointer-events-none"
