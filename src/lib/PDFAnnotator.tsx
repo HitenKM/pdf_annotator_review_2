@@ -33,6 +33,7 @@ export function PDFAnnotator({
   const [numPages, setNumPages] = useState(0);
   const [pageDimensions, setPageDimensions] = useState<Record<number, { width: number; height: number }>>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [activeTool, setActiveTool] = useState<'select' | 'pan' | 'textbox' | 'checkbox' | 'radio'>('select');
   const [dragState, setDragState] = useState<{
     isDragging: boolean;
     annotationId: string | null;
@@ -173,36 +174,136 @@ export function PDFAnnotator({
     }
   }, [onSelectionChange]);
 
+  const handleDeleteSelected = () => {
+    if (selectedIds.length === 0) return;
+    
+    const newAnnotations = { ...annotations };
+    Object.keys(newAnnotations.pages).forEach(pageKey => {
+      newAnnotations.pages[pageKey] = newAnnotations.pages[pageKey].filter(
+        ann => !selectedIds.includes(ann.id)
+      );
+    });
+    
+    onAnnotationsChange(newAnnotations);
+    setSelectedIds([]);
+    onSelectionChange([]);
+  };
+
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-auto bg-gray-800 relative"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onClick={handleContainerClick}
-    >
+    <div className="flex h-full">
+      {/* Toolbar */}
+      {mode === 'edit' && (
+        <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-3 gap-2">
+          <button
+            onClick={() => setActiveTool('select')}
+            className={`w-9 h-9 rounded flex items-center justify-center transition-colors ${
+              activeTool === 'select' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'
+            }`}
+            title="Select (V)"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+            </svg>
+          </button>
+
+          <button
+            onClick={() => setActiveTool('pan')}
+            className={`w-9 h-9 rounded flex items-center justify-center transition-colors ${
+              activeTool === 'pan' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:bg-gray-800'
+            }`}
+            title="Pan (H)"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path d="M18 11V6a2 2 0 00-2-2v0a2 2 0 00-2 2v0M14 10V4a2 2 0 00-2-2v0a2 2 0 00-2 2v2M10 10.5V6a2 2 0 00-2-2v0a2 2 0 00-2 2v8" />
+              <path d="M18 8a2 2 0 012 2v4.5a6.5 6.5 0 01-13 0V13a2 2 0 014 0v.5" />
+            </svg>
+          </button>
+
+          <div className="w-6 h-px bg-gray-700 my-1" />
+
+          <button
+            onClick={() => setActiveTool('textbox')}
+            className={`w-9 h-9 rounded flex items-center justify-center text-xs font-bold transition-colors ${
+              activeTool === 'textbox' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'
+            }`}
+            title="Text Field"
+          >
+            T
+          </button>
+
+          <button
+            onClick={() => setActiveTool('checkbox')}
+            className={`w-9 h-9 rounded flex items-center justify-center transition-colors ${
+              activeTool === 'checkbox' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-gray-800'
+            }`}
+            title="Checkbox"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </button>
+
+          <button
+            onClick={() => setActiveTool('radio')}
+            className={`w-9 h-9 rounded flex items-center justify-center transition-colors ${
+              activeTool === 'radio' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:bg-gray-800'
+            }`}
+            title="Radio Button"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="9" />
+              <circle cx="12" cy="12" r="4" fill="currentColor" />
+            </svg>
+          </button>
+
+          <div className="flex-1" />
+
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="w-9 h-9 rounded flex items-center justify-center text-red-400 hover:bg-red-900/40 transition-colors"
+              title={`Delete ${selectedIds.length} field(s)`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* PDF Viewer */}
       <div
-        className="inline-block"
-        style={{
-          transform: `scale(${zoom})`,
-          transformOrigin: 'top left',
-        }}
+        ref={containerRef}
+        className="flex-1 overflow-auto bg-gray-800 relative flex items-start justify-center"
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onClick={handleContainerClick}
       >
-        {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
-          <div key={pageNum} className="relative mb-4">
-            <PDFPage
-              pdfDocument={pdfDocument}
-              pageNumber={pageNum}
-              dimensions={pageDimensions[pageNum]}
-              annotations={annotations.pages[pageNum.toString()] || []}
-              onAnnotationMouseDown={handleAnnotationMouseDown}
-              selectedIds={selectedIds}
-              mode={mode}
-              fieldValues={fieldValues}
-              editingFieldId={editingFieldId}
-            />
-          </div>
-        ))}
+        <div
+          className="inline-block"
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top center',
+          }}
+        >
+          {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
+            <div key={pageNum} className="relative mb-4">
+              <PDFPage
+                pdfDocument={pdfDocument}
+                pageNumber={pageNum}
+                dimensions={pageDimensions[pageNum]}
+                annotations={annotations.pages[pageNum.toString()] || []}
+                onAnnotationMouseDown={handleAnnotationMouseDown}
+                selectedIds={selectedIds}
+                mode={mode}
+                fieldValues={fieldValues}
+                editingFieldId={editingFieldId}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
